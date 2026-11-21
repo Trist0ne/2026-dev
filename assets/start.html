@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Home</title>
+<link rel="icon" href="kit/icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="kit/house.css?v=42196de95e4e">
+<script src="kit/class.js"></script>
+<script src="items.js?v=42196de95e4e"></script>
+<script src="kit/kit.js?v=42196de95e4e"></script>
+<script src="kit/lib/wallet-lib.js?v=42196de95e4e"></script>
+<script src="kit/lib/course-words.js?v=42196de95e4e"></script>
+<script src="kit/wallet.js?v=42196de95e4e"></script>
+</head>
+<body>
+<main class="page">
+  <div class="page-head">
+    <h1 id="hello">Your course home</h1>
+    <p class="lede">Your quizzes and challenges, what you have handed in, and your results.</p>
+  </div>
+  <section class="panel" id="work"><h2>Your work</h2><p class="muted small">Sign in to see it.</p></section>
+  <section class="panel" id="results"><h2>Your results</h2><p class="muted small">Sign in to see them.</p></section>
+  <section class="panel">
+    <h2>Reference</h2>
+    <p><a href="ref/bitcoin.html">Bitcoin transactions reference sheet</a><br><span class="muted small">Hex, byte order, hashing, transaction layout.</span></p>
+  </section>
+  <p class="small muted" style="text-align:right"><a href="staff.html">Instructors</a></p>
+</main>
+<script>
+(function () {
+  'use strict';
+  var el = Kit.el, $ = function (id) { return document.getElementById(id); };
+  Kit.chrome({ title: 'Home', crumbs: 'Home', home: 'start.html' });
+  var items = window.BC_ITEMS || [], KIND = { quiz: 'Quiz', lab: 'Challenge' };
+  function titleOf(id) { for (var i = 0; i < items.length; i++) if (items[i].id === id) return items[i].title; return id; }
+
+  /* What has been handed in comes from the class itself (so it is right on any computer), plus anything this browser
+     knows it sent, plus what has been graded. */
+  var handIns = null, graded = null, asked = false;
+  function hhmm(t) { var d = new Date(t); return isNaN(d) ? String(t) : d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + d.toLocaleDateString([], { day: 'numeric', month: 'short' }); }
+  function paintWork() {
+    var who = Kit.who(), inbox = !!Kit.inbox();
+    $('work').replaceChildren(el('h2', { text: 'Your work' }), el('div', { class: 'table-wrap' }, el('table', { class: 'data', id: 'work-table' }, el('tbody', null, items.map(function (it) {
+      var parts = it.kind === 'lab' ? Object.keys(it.flags || {}) : [''];
+      var when = parts.map(function (p) {
+        var here = Kit.mine.get('sent:' + it.id + ':' + p + ':' + who, null);
+        return (handIns && handIns[it.id + ':' + p]) || (here ? here.at : null);
+      });
+      var done = when.filter(Boolean).length;
+      var isGraded = graded && (it.kind === 'quiz' ? !!graded.quizzes[it.id] : parts.some(function (p) { return graded.flags[it.id + ':' + p]; }));
+      var text = isGraded ? 'Graded: see your results below'
+        : done ? (it.kind === 'lab' ? done + ' of ' + parts.length + ' flags handed in' : 'Handed in ' + (handIns && handIns[it.id + ':'] ? hhmm(handIns[it.id + ':']) : when[0]))
+        : !inbox ? 'Hand in with Copy or Download'
+        : !asked ? 'Checking…'
+        : handIns ? 'Not handed in yet' : 'Couldn\'t check right now';
+      return el('tr', { 'data-item': it.id }, el('td', null, el('span', { class: 'tag', text: KIND[it.kind] || it.kind })),
+        el('td', null, el('a', { href: it.href, text: it.title }), el('br'), el('span', { class: 'muted small', text: it.section || '' })),
+        el('td', null, el('span', { class: done || isGraded ? 'solved-badge' : 'muted small', text: (done || isGraded ? '✓ ' : '') + text })));
+    })))));
+  }
+
+  function paintResults(state) {
+    var box = $('results'), head = el('div', { class: 'panel-head' }, el('h2', { text: 'Your results' }),
+      el('button', { class: 'icon-btn', type: 'button', id: 'refresh', text: 'Check again', onclick: loadResults }));
+    if (state === 'loading') return box.replaceChildren(head, el('p', { class: 'muted small', text: 'Looking for published results…' }));
+    if (state === 'noinbox') return box.replaceChildren(el('h2', { text: 'Your results' }), el('p', { class: 'muted small', text: 'This class runs without an inbox, so results aren\'t published here. Your instructor will tell you.' }));
+    if (state === 'error') return box.replaceChildren(head, el('div', { class: 'callout warn', text: 'Couldn\'t reach the class to look for results. Check your connection and try again.' }));
+    if (!state) return box.replaceChildren(head, el('p', { id: 'no-results', class: 'muted', text: 'Nothing published for you yet. Your instructor publishes results after grading: check again later.' }));
+    var m = state.mine, c = state.cls, rows = [];
+    items.forEach(function (it) {
+      if (it.kind === 'quiz') {
+        var q = m.quizzes[it.id], cq = c.quizzes[it.id];
+        if (!q && !cq) return;
+        var marks = q ? Object.keys(q.per).map(function (k) { return q.per[k] ? '✓' : '✗'; }).join(' ') : '';
+        rows.push(el('tr', { 'data-item': it.id }, el('td', null, it.title, marks ? el('div', { class: 'muted small mono', title: 'Question by question', text: marks }) : null),
+          el('td', { class: 'num' }, q ? el('b', { text: q.score + ' / ' + q.max }) : el('span', { class: 'muted', text: 'not handed in' })),
+          el('td', { class: 'num', text: cq ? cq.avg + ' / ' + cq.max + ' (' + cq.n + ' handed in)' : '·' })));
+      } else Object.keys(it.flags || {}).forEach(function (f, i) {
+        var fk = it.id + ':' + f, got = m.flags[fk];
+        rows.push(el('tr', { 'data-item': fk }, el('td', { text: it.title + ', flag ' + (i + 1) }),
+          el('td', { class: 'num' }, got ? el('b', { text: got + ' pts' }) : el('span', { class: 'muted', text: 'not yet' })),
+          el('td', { class: 'num', text: (c.flags[fk] || 0) + ' of ' + c.students + ' solved it' })));
+      });
+    });
+    rows.push(el('tr', { 'data-item': 'ctf-total' }, el('td', null, el('b', { text: 'Challenge points' })), el('td', { class: 'num' }, el('b', { text: m.ctf + ' pts' })), el('td', { class: 'num', text: 'average ' + c.ctfAvg + ' pts' })));
+    box.replaceChildren(head, el('div', { class: 'table-wrap' }, el('table', { class: 'data', id: 'results-table' },
+        el('thead', null, el('tr', null, el('th', { text: 'Item' }), el('th', { class: 'num', text: 'You' }), el('th', { class: 'num', text: 'Class' }))),
+        el('tbody', null, rows))),
+      el('p', { class: 'small muted', style: 'margin:.5rem 0 0', text: 'Published ' + String(state.at).replace('T', ' ').slice(0, 16) + ' UTC, for ' + (m.handle || 'you') + '. Only you can read your own scores: they were encrypted to your account and signed by your class.' }));
+  }
+  function loadResults() {
+    if (!Kit.inbox()) return paintResults('noinbox');
+    paintResults('loading');
+    Kit.myResults().then(function (r) { graded = r ? r.mine : null; paintResults(r); paintWork(); }, function () { paintResults('error'); });
+  }
+
+  Kit.signIn().then(function (me) {
+    if (me.handle) $('hello').textContent = 'Welcome, ' + me.handle;
+    paintWork(); loadResults();
+    /* Whatever goes wrong while asking, the list must not sit on "Checking…". */
+    Promise.resolve().then(function () { return Kit.myHandIns(); }).then(function (h) { handIns = h; }, function () { handIns = null; }).then(function () { asked = true; paintWork(); });
+  });
+})();
+</script>
+</body>
+</html>
